@@ -1332,8 +1332,67 @@ function showPage(id) {
 }
 
 /* ═══════════════ PARSE MATH ═══════════════ */
+/* Bersihkan sintaks LaTeX ($...$, \text{}, \frac{}{}, dsb) menjadi teks/simbol biasa
+   supaya tidak tampil mentah seperti "$2\text{ jam}$" di layar siswa. */
+function stripLatex(s) {
+  if (!s) return s;
+
+  // Hilangkan delimiter math: $$...$$, $...$, \[...\], \(...\)
+  s = s.replace(/\$\$([\s\S]*?)\$\$/g, (_, inner) => inner);
+  s = s.replace(/\\\[([\s\S]*?)\\\]/g, (_, inner) => inner);
+  s = s.replace(/\\\(([\s\S]*?)\\\)/g, (_, inner) => inner);
+  s = s.replace(/\$([^$]*)\$/g, (_, inner) => inner);
+
+  // \left / \right (pembungkus ukuran kurung) dibuang, kurungnya sendiri dipertahankan
+  s = s.replace(/\\left/g, '').replace(/\\right/g, '');
+
+  // Perintah pembungkus teks: \text{}, \mathrm{}, \mathbf{}, \operatorname{}, dst -> ambil isinya saja
+  ['text','mathrm','mathbf','mathit','mathsf','mathtt','operatorname','textbf','textit','textrm','boldsymbol'].forEach(cmd => {
+    const re = new RegExp('\\\\' + cmd + '\\{([^{}]*)\\}', 'g');
+    let prev;
+    do { prev = s; s = s.replace(re, '$1'); } while (s !== prev);
+  });
+
+  // \frac{a}{b}, \dfrac{a}{b}, \tfrac{a}{b} -> pecahan tampilan
+  let prevFrac;
+  do {
+    prevFrac = s;
+    s = s.replace(/\\(?:d|t)?frac\{([^{}]*)\}\{([^{}]*)\}/g, (_, num, den) =>
+      '<span class="math-frac"><sup>' + num + '</sup>⁄<sub>' + den + '</sub></span>');
+  } while (s !== prevFrac);
+
+  // \sqrt[n]{...} dan \sqrt{...}
+  s = s.replace(/\\sqrt\[(\d+)\]\{([^{}]*)\}/g, (_, n, inner) => {
+    const nthRoots = { '2':'√','3':'∛','4':'∜' };
+    return '<span class="math-root">' + (nthRoots[n] || (n + '√')) + '<span class="math-root-inner">' + inner + '</span></span>';
+  });
+  s = s.replace(/\\sqrt\{([^{}]*)\}/g, (_, inner) => '<span class="math-root">√<span class="math-root-inner">' + inner + '</span></span>');
+
+  // Simbol & operator umum
+  const symbolMap = {
+    'times':'×','div':'÷','cdot':'·','pm':'±','mp':'∓',
+    'leq':'≤','le':'≤','geq':'≥','ge':'≥','neq':'≠','ne':'≠','approx':'≈',
+    'infty':'∞','ldots':'…','cdots':'…','dots':'…',
+    'alpha':'α','beta':'β','gamma':'γ','delta':'δ','epsilon':'ε','theta':'θ','lambda':'λ','mu':'μ','pi':'π',
+    'sigma':'σ','omega':'ω','phi':'φ','psi':'ψ','rho':'ρ','nu':'ν','eta':'η','tau':'τ','xi':'ξ','zeta':'ζ',
+    'Delta':'Δ','Sigma':'Σ','Omega':'Ω','Lambda':'Λ','Pi':'Π','Phi':'Φ','Gamma':'Γ','Theta':'Θ',
+  };
+  s = s.replace(/\\([a-zA-Z]+)/g, (m, name) => (symbolMap[name] !== undefined ? symbolMap[name] : m));
+
+  // Spasi kecil LaTeX (\, \; \! \:) dan tanda kurung kurawal literal (\{ \})
+  s = s.replace(/\\[,;!:]/g, ' ');
+  s = s.replace(/\\\{/g, '{').replace(/\\\}/g, '}');
+  s = s.replace(/\\%/g, '%').replace(/\\&/g, '&').replace(/\\_/g, '_');
+
+  // Sisa tanda $ , \[ \] \( \) yang tidak berpasangan
+  s = s.replace(/\$/g, '').replace(/\\\[|\\\]|\\\(|\\\)/g, '');
+
+  return s;
+}
+
 function parseMath(s) {
   if (!s) return s;
+  s = stripLatex(s);
   const greek = { 'alpha':'α','beta':'β','gamma':'γ','delta':'δ','epsilon':'ε','theta':'θ','lambda':'λ','mu':'μ','pi':'π','sigma':'σ','omega':'ω','phi':'φ','psi':'ψ','rho':'ρ','nu':'ν','eta':'η','tau':'τ','xi':'ξ','zeta':'ζ','Delta':'Δ','Sigma':'Σ','Omega':'Ω','Lambda':'Λ','Pi':'Π','Phi':'Φ','Gamma':'Γ','Theta':'Θ' };
   s = s.replace(/\b(alpha|beta|gamma|delta|epsilon|theta|lambda|mu|pi|sigma|omega|phi|psi|rho|nu|eta|tau|xi|zeta|Delta|Sigma|Omega|Lambda|Pi|Phi|Gamma|Theta)\b/g, m => greek[m] || m);
   s = s.replace(/\binf(inity)?\b/gi, '∞');

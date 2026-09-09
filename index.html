@@ -712,7 +712,7 @@ window.addEventListener('offline', () => { updateOfflineBanner(); saveSession();
 let coverData = null, logoDataUri = LOGO_DATA_URI, siswaAktif = null, modeManual = false;
 let infoMapelData = null, soalList = [], jawaban = {}, currentIdx = 0;
 let submitCardShown = false, timerInterval = null, readingDone = false;
-let timerSisaDetik = 15, timerCekPeserta = null;
+let timerSisaDetik = 1, timerCekPeserta = null;
 let kodeMapelAktif = '', mataPelajaranAktif = '', passwordSelesaiAktif = '';
 
 /* ═══════════════ GAS FETCH ═══════════════ */
@@ -1077,12 +1077,12 @@ function mulaiTimer() {
   const countEl = document.getElementById('timer-countdown'), labelEl = document.getElementById('timer-label'), iconEl = document.getElementById('timer-icon');
   const timerForIdx = currentIdx;
   barEl.className = 'timer-bar reading'; labelEl.textContent = 'Waktu Membaca — pilihan jawaban terkunci'; labelEl.className = 'timer-label reading-mode'; iconEl.textContent = '🔒';
-  countEl.textContent = '15'; countEl.className = 'timer-countdown'; fillEl.style.width = '100%';
+  countEl.textContent = '1'; countEl.className = 'timer-countdown'; fillEl.style.width = '100%';
   const optListEl = document.getElementById('option-list'); if (optListEl) optListEl.classList.add('options-blocker');
   timerInterval = setInterval(() => {
     if (currentIdx !== timerForIdx) { clearInterval(timerInterval); return; }
     timerSisaDetik--;
-    fillEl.style.width = ((timerSisaDetik / 15) * 100) + '%'; countEl.textContent = timerSisaDetik;
+    fillEl.style.width = ((timerSisaDetik / 1) * 100) + '%'; countEl.textContent = timerSisaDetik;
     if (timerSisaDetik <= 5) countEl.className = 'timer-countdown warning';
     if (timerSisaDetik <= 0) {
       clearInterval(timerInterval); readingDone = true;

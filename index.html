@@ -1223,45 +1223,101 @@ async function prosesSelesai() {
   const tidakDijawab = total - Object.keys(jawaban).length;
 
 
-  // 2. Tampilkan nilai LANGSUNG ke siswa
+  // 2. Siapkan payload + simpan sebagai "pending" agar tidak hilang bila halaman tertutup / reload
+  const pending = {
+    gasUrlTujuan,
+    nama: siswaAktif['nama'] || '',
+    nilai, benar, total,
+    params: {
+      submitId: 'sub_' + (siswaAktif['no peserta'] || '') + '_' + kode + '_' + Date.now(),
+      noPeserta: siswaAktif['no peserta'] || '', nama: siswaAktif['nama'] || '',
+      kelas: siswaAktif['kelas'] || '', sekolah: siswaAktif['sekolah'] || '',
+      kodeMapel: kode, mataPelajaran, passwordSelesai: passInput,
+      jawaban: JSON.stringify(jawabanMap), waktuSubmit,
+      nilai: nilai, benar: benar, total: total,
+      tidakDijawab: tidakDijawab,
+      detailJawaban: detailJawaban
+    }
+  };
+  try { localStorage.setItem(PENDING_KEY, JSON.stringify(pending)); } catch (_) {}
   clearInterval(timerInterval);
+
+  // 3. Kirim ke spreadsheet — ulangi terus sampai berhasil, tombol Selesai baru muncul setelah itu
+  await kirimHasilSampaiBerhasil(pending);
+}
+
+/* ═══════════════ KIRIM ULANG OTOMATIS SAMPAI BERHASIL ═══════════════ */
+const PENDING_KEY = 'exam_pending_submit';
+let _sedangMengirim = false;
+function _tunggu(ms) { return new Promise(r => setTimeout(r, ms)); }
+function _guardUnload(e) { e.preventDefault(); e.returnValue = ''; }
+
+function tampilModalHasil(pending) {
   showModal({
     icon: '🎉', iconBg: '#dcfce7', title: 'Ujian Selesai!',
     sub:
       '<div class="hasil-score-box">' +
-        '<strong>' + (siswaAktif['nama'] || '') + '</strong>' +
-        '<div class="hasil-score-num">' + nilai + '</div>' +
-        '<div class="hasil-score-sub">' + benar + ' benar dari ' + total + ' soal</div>' +
+        '<strong>' + (pending.nama || '') + '</strong>' +
+        '<div class="hasil-score-num">' + pending.nilai + '</div>' +
+        '<div class="hasil-score-sub">' + pending.benar + ' benar dari ' + pending.total + ' soal</div>' +
         '<span class="hasil-sync-note pending" id="sync-status-chip">⏳ Menyimpan ke spreadsheet...</span>' +
+        '<div style="font-size:11px;color:var(--muted);margin-top:10px;">Jangan tutup halaman ini sampai tombol “Selesai” muncul.</div>' +
       '</div>',
-    buttons: [{ label: 'Selesai', cls: 'success', action: () => location.reload() }],
+    buttons: [],   // tombol Selesai sengaja disembunyikan sampai data benar-benar terkirim
   });
-  clearSession();
-
-  // 3. Kirim hasil ke Apps Script kelas yang sesuai untuk ditulis ke spreadsheet
-  try {
-    const simpanRes = await gasGet('simpanHasilUjian', {
-  noPeserta: siswaAktif['no peserta'] || '', nama: siswaAktif['nama'] || '',
-  kelas: siswaAktif['kelas'] || '', sekolah: siswaAktif['sekolah'] || '',
-  kodeMapel: kode, mataPelajaran, passwordSelesai: passInput,
-  jawaban: JSON.stringify(jawabanMap), waktuSubmit,
-  nilai: nilai, benar: benar, total: total,
-  tidakDijawab: (total - benar - (total - Object.keys(jawaban).length) >= 0 ? (total - Object.keys(jawaban).length) : 0),
-  detailJawaban: detailJawaban   // dikirim ke Apps Script
-}, gasUrlTujuan);
-    const chip = document.getElementById('sync-status-chip');
-    if (chip) {
-      if (simpanRes && simpanRes.success) {
-        chip.className = 'hasil-sync-note done'; chip.textContent = '✓ Tersimpan ke spreadsheet';
-      } else {
-        chip.className = 'hasil-sync-note failed'; chip.textContent = '⚠ Gagal tersimpan — beri tahu pengawas';
-      }
-    }
-  } catch (_) {
-    const chip = document.getElementById('sync-status-chip');
-    if (chip) { chip.className = 'hasil-sync-note failed'; chip.textContent = '⚠ Gagal tersimpan — beri tahu pengawas'; }
-  }
 }
+
+async function kirimHasilSampaiBerhasil(pending) {
+  if (_sedangMengirim) return;
+  _sedangMengirim = true;
+  window.addEventListener('beforeunload', _guardUnload);
+  tampilModalHasil(pending);
+  const setChip = (cls, txt) => {
+    const chip = document.getElementById('sync-status-chip');
+    if (chip) { chip.className = 'hasil-sync-note ' + cls; chip.textContent = txt; }
+  };
+
+  let percobaan = 0;
+  while (true) {
+    percobaan++;
+    if (!navigator.onLine) {
+      setChip('failed', '⚠ Tidak ada koneksi — menunggu jaringan...');
+      await new Promise(res => {
+        const h = () => { window.removeEventListener('online', h); res(); };
+        window.addEventListener('online', h);
+        setTimeout(h, 5000);
+      });
+      continue;
+    }
+    setChip('pending', '⏳ Menyimpan ke spreadsheet... (percobaan ke-' + percobaan + ')');
+    try {
+      const res = await gasGet('simpanHasilUjian', pending.params, pending.gasUrlTujuan);
+      if (res && res.success) break;
+    } catch (_) { /* gagal / timeout → ulangi */ }
+    setChip('failed', '⚠ Gagal terkirim — mencoba lagi otomatis (percobaan ke-' + percobaan + ')');
+    await _tunggu(Math.min(2000 + percobaan * 1000, 8000));
+  }
+
+  // Berhasil — baru sekarang bersihkan data lokal & munculkan tombol Selesai
+  try { localStorage.removeItem(PENDING_KEY); } catch (_) {}
+  clearSession();
+  window.removeEventListener('beforeunload', _guardUnload);
+  _sedangMengirim = false;
+  setChip('done', '✓ Tersimpan ke spreadsheet');
+  const act = document.getElementById('modal-actions'); act.innerHTML = '';
+  const btn = document.createElement('button');
+  btn.className = 'modal-btn success'; btn.textContent = 'Selesai';
+  btn.addEventListener('click', () => location.reload());
+  act.appendChild(btn);
+}
+
+/* Jika halaman sempat tertutup/reload sebelum data terkirim, lanjutkan pengiriman otomatis */
+window.addEventListener('DOMContentLoaded', () => {
+  try {
+    const raw = localStorage.getItem(PENDING_KEY);
+    if (raw) kirimHasilSampaiBerhasil(JSON.parse(raw));
+  } catch (_) {}
+});
 
 /* ═══════════════ IMAGE CACHE ═══════════════ */
 const IMG_MEM_MAX = 60;

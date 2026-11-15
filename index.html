@@ -703,6 +703,18 @@ function applyStaticLogo() {
 }
 
 /* ═══════════════ CACHE SYSTEM ═══════════════ */
+/* ── Anti kirim ganda: tanda "sudah terkirim" di browser (tidak ikut terhapus tombol hapus cache) ── */
+let passwordMulaiAktif = '';
+function doneKey(no, kode, pwd) { return 'exam_done_' + [no, kode, pwd].map(v => String(v || '').trim().toLowerCase()).join('|'); }
+function sudahTerkirim(no, kode, pwd) {
+  if (!no || no === '-') return false;
+  try { return localStorage.getItem(doneKey(no, kode, pwd)) !== null; } catch (_) { return false; }
+}
+function tandaiTerkirim(no, kode, pwd) {
+  if (!no || no === '-') return;
+  try { localStorage.setItem(doneKey(no, kode, pwd), String(Date.now())); } catch (_) {}
+}
+
 const CACHE_VERSION = 'v3';
 const CACHE_TTL = { cover:86400000, logo:604800000, mapel:900000, image:259200000, session:86400000 };
 function cacheSet(key, data, ttl) {
@@ -975,6 +987,11 @@ async function mulaiUjian() {
   const password = document.getElementById('pass-mulai').value;
   if (!password) return toast('warn', 'Password Kosong', 'Masukkan password mulai dari pengawas.');
   const no = siswaAktif['no peserta'] || '';
+  if (sudahTerkirim(no, kode, password)) {
+    cacheRemove(sessionKey(no, kode));
+    return toast('error', 'Ditolak', 'Data dengan No Peserta, Kode Mapel, dan Password yang sama sudah pernah terkirim.', 6000);
+  }
+  passwordMulaiAktif = password;
   const savedSesi = loadSession(no, kode);
   if (savedSesi && savedSesi.soalList && savedSesi.soalList.length > 0) {
     const answered = Object.keys(savedSesi.jawaban || {}).length, total = savedSesi.soalList.length;
@@ -1328,6 +1345,7 @@ async function prosesSelesai() {
 
   // 2. Siapkan payload + simpan sebagai "pending" agar tidak hilang bila halaman tertutup / reload
   const pending = {
+    pwdMulai: passwordMulaiAktif,
     gasUrlTujuan,
     nama: siswaAktif['nama'] || '',
     nilai, benar, total,
@@ -1402,6 +1420,7 @@ async function kirimHasilSampaiBerhasil(pending) {
   }
 
   // Berhasil — baru sekarang bersihkan data lokal & munculkan tombol Selesai
+  tandaiTerkirim(pending.params.noPeserta, pending.params.kodeMapel, pending.pwdMulai);
   try { localStorage.removeItem(PENDING_KEY); } catch (_) {}
   clearSession();
   window.removeEventListener('beforeunload', _guardUnload);

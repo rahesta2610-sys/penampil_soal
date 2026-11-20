@@ -105,6 +105,10 @@ sub { bottom: -0.25em; color: inherit; }
 .math-frac { display: inline-flex; flex-direction: column; align-items: center; vertical-align: middle; font-size: 0.85em; line-height: 1.1; margin: 0 2px; }
 .math-frac sup, .math-frac sub { font-size: 1em; position: static; line-height: 1; }
 .q-text, .opt-text { line-height: 1.8; }
+.q-text b, .q-text strong { font-weight: 800; }
+.opt-text b, .opt-text strong { font-weight: 700; }
+.q-text i, .q-text em, .opt-text i, .opt-text em { font-style: italic; }
+.q-text u, .opt-text u { text-decoration: underline; text-underline-offset: 2px; }
 
 #splash { position: fixed; inset: 0; z-index: 99999; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #140a2b; overflow: hidden; transition: opacity 0.6s ease, transform 0.6s ease; }
 #splash.hide-out { opacity: 0; transform: scale(1.04); pointer-events: none; }
@@ -1299,10 +1303,25 @@ function acakSoal(list) {
    dikonversi ke simbol Unicode sederhana lewat parseMath(). */
 const MATH_SEG_RE = /(?<!\\)\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]|\\\(([\s\S]+?)\\\)|(?<!\\)\$((?:\\.|[^$\\\n])+?)\$/g;
 
+/* Format teks: **tebal**, *miring*, ***tebal miring***, __garis bawah__
+   (juga \textbf{}, \textit{}, \emph{}, \underline{} di luar rumus).
+   Tag HTML <b> <i> <u> <strong> <em> tetap berfungsi seperti biasa.
+   Aman untuk perkalian (2*3*4) dan isian kosong (______). */
+function fmtInline(s) {
+  return s
+    .replace(/(?<![\w*])\*\*\*(?=[^\s*])([^\n]+?)(?<=[^\s*])\*\*\*(?![\w*])/g, '<b><i>$1</i></b>')
+    .replace(/(?<![\w*])\*\*(?=[^\s*])([^\n]+?)(?<=[^\s*])\*\*(?![\w*])/g, '<b>$1</b>')
+    .replace(/(?<![\w*])\*(?=[^\s*])([^\n*]+?)(?<=[^\s*])\*(?![\w*])/g, '<i>$1</i>')
+    .replace(/(?<![\w_])__(?=[^\s_])([^\n]+?)(?<=[^\s_])__(?![\w_])/g, '<u>$1</u>');
+}
+
 function rawToHtmlPlain(s) {
   s = String(s || '').replace(/\\\$/g, '\x01');
-  return parseMath(s)
-    .replace(/&(?!amp;|lt;|gt;|quot;|#)/g, '&amp;')
+  s = s.replace(/\\textbf\{([^{}]*)\}/g, '**$1**')
+       .replace(/\\(?:textit|emph)\{([^{}]*)\}/g, '*$1*')
+       .replace(/\\underline\{([^{}]*)\}/g, '__$1__');
+  return fmtInline(parseMath(s)
+    .replace(/&(?!amp;|lt;|gt;|quot;|#)/g, '&amp;'))
     .replace(/\n/g, '<br>')
     .replace(/\x01/g, '$');
 }
